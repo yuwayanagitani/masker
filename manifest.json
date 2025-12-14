@@ -1,10 +1,20 @@
 {
-  "package": "ai_image_masker",
-  "name": "Image Masker (Grouped Occlusion)",
-  "mod": 1765568452,
-  "conflicts": [],
-  "min_point_version": 0,
-  "max_point_version": 0,
-  "human_version": "0.2.0",
-  "homepage": "https://ankiweb.net/shared/addons/"
+  "name": "anki-ai-masker",
+  "version": "0.1.0",
+  "description": "Create image-occlusion style flashcards in Anki with a lightweight editor workflow. Optionally, you can enable AI-assisted mask suggestions and metadata generation.",
+  "auther": "Yuwa Yanagitani",
+  "homepage": "https://github.com/yuwayanagitani/anki-ai-masker",
+  "license": "MIT",
+  "min_anki_version": "23.10.0",
+  "max_anki_version": null,
+  "requirements": [],
+  "entry_point": "__init__.py",
+  "config_file": "config.json",
+  "tags": [
+    "anki",
+    "addon",
+    "image-occlusion",
+    "ai"
+  ],
+  "notes": ""
 }
