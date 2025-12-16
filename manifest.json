@@ -1,6 +1,6 @@
 {
   "name": "anki-ai-masker",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "description": "Create image-occlusion style flashcards in Anki with a lightweight editor workflow. Optionally, you can enable AI-assisted mask suggestions and metadata generation.",
   "auther": "Yuwa Yanagitani",
   "homepage": "https://github.com/yuwayanagitani/anki-ai-masker",
