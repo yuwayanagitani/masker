@@ -58,6 +58,7 @@ FIELD_TITLE = "Title"
 FIELD_EXPLANATION = "Explanation"
 FIELD_MASKLABEL = "MaskLabel"
 FIELD_NO = "No"
+FIELD_INTERNAL = "InternalData"
 
 
 # -------------------- config --------------------
@@ -608,7 +609,7 @@ def ensure_note_type() -> None:
 
     def _apply_field_ui_defaults(model: dict) -> None:
         # 例：見た目に直接関係しないものを折りたたむ（好みで調整OK）
-        for fn in [FIELD_IMAGEFILE, FIELD_MASKSB64, FIELD_ACTIVEIDX, FIELD_GROUPID, FIELD_MASKLABEL]:
+        for fn in [FIELD_IMAGEFILE, FIELD_MASKSB64, FIELD_ACTIVEIDX, FIELD_GROUPID, FIELD_MASKLABEL, FIELD_INTERNAL]:
             _set_field_collapsed(model, fn, True)
 
         # 表示上触りやすいものは開いたまま（必要なら True にしてOK）
@@ -620,7 +621,13 @@ def ensure_note_type() -> None:
 
     def _field_names(model: dict) -> list[str]:
         flds = model.get("flds") or []
-        return [f.get("name") for f in flds if isinstance(f, dict)]
+        names: list[str] = []
+        for f in flds:
+            if isinstance(f, dict):
+                name = f.get("name")
+                if isinstance(name, str):
+                    names.append(name)
+        return names
 
     need_fields = [
         FIELD_SORTKEY,
@@ -632,7 +639,8 @@ def ensure_note_type() -> None:
         FIELD_MASKSB64,
         FIELD_ACTIVEIDX,
         FIELD_GROUPID,
-        FIELD_MASKLABEL,        
+        FIELD_MASKLABEL,  
+        FIELD_INTERNAL,  
     ]
 
     if not m:
@@ -843,6 +851,47 @@ def _decode_masks(b64: str) -> list[dict]:
     except Exception:
         pass
     return []
+
+
+def _pack_internal(
+    image_filename: str,
+    group_id: str,
+    active_index: int,
+    masks: list[dict],
+    mask_label: str = "",
+) -> str:
+    """
+    Phase 1: store a consolidated internal JSON payload while keeping legacy fields.
+    Stored as plain JSON string (not base64) for easier future migration/debug.
+    """
+    payload = {
+        "v": 1,
+        "image": image_filename or "",
+        "group": group_id or "",
+        "active": int(active_index),
+        "masks": masks if isinstance(masks, list) else [],
+        "mask_label": mask_label or "",
+    }
+    try:
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    except Exception:
+        # last-resort fallback
+        return "{}"
+
+
+def _unpack_internal(s: str) -> dict[str, Any] | None:
+    if not s:
+        return None
+    t = (s or "").strip()
+    if not t:
+        return None
+    try:
+        obj = json.loads(t)
+        if isinstance(obj, dict) and int(obj.get("v", 0) or 0) >= 1:
+            return cast(dict[str, Any], obj)
+    except Exception:
+        return None
+    return None
 
 
 def _int_or0(s: Any) -> int:
@@ -1267,8 +1316,18 @@ def _openai_gen_meta(image_bytes: bytes, mime: str) -> dict[str, str]:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             obj = json.loads(resp.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError as e:
-        raw = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"OpenAI HTTPError {e.code}: {raw}")
+        raw = ""
+        try:
+            raw = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        raise RuntimeError(f"HTTPError {e.code}: {raw}") from e
+
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Network error: {e.reason}") from e
+
+    except Exception as e:
+        raise RuntimeError(f"Unexpected error during HTTP request: {e}") from e
 
     txt = ""
     for item in obj.get("output", []) or []:
@@ -1329,8 +1388,18 @@ def _gemini_gen_meta(image_bytes: bytes, mime: str) -> dict[str, str]:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             obj = json.loads(resp.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError as e:
-        raw = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Gemini HTTPError {e.code}: {raw}")
+        raw = ""
+        try:
+            raw = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        raise RuntimeError(f"HTTPError {e.code}: {raw}") from e
+
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Network error: {e.reason}") from e
+
+    except Exception as e:
+        raise RuntimeError(f"Unexpected error during HTTP request: {e}") from e
 
     text = ""
     cands = obj.get("candidates", [])
@@ -1473,10 +1542,27 @@ class MaskEditorDialog(QDialog):
         if not mw.col or not self.existing_note_id:
             return
         note = mw.col.get_note(self.existing_note_id)
-        self.image_filename = note[FIELD_IMAGEFILE] or ""
-        self.group_id = note[FIELD_GROUPID] or ""
-        self.masks = _decode_masks(note[FIELD_MASKSB64] or "")
+        internal_raw = (note.get(FIELD_INTERNAL, "") if hasattr(note, "get") else note[FIELD_INTERNAL]) or ""
+        internal = _unpack_internal(internal_raw)
 
+        if internal:
+            self.image_filename = str(internal.get("image", "") or "")
+            self.group_id = str(internal.get("group", "") or "")
+            masks_obj = internal.get("masks", [])
+            self.masks = cast(list[dict], masks_obj) if isinstance(masks_obj, list) else []
+
+            # fallback for older notes or partial payloads
+            if not self.image_filename:
+                self.image_filename = note[FIELD_IMAGEFILE] or ""
+            if not self.group_id:
+                self.group_id = note[FIELD_GROUPID] or ""
+            if not self.masks:
+                self.masks = _decode_masks(note[FIELD_MASKSB64] or "")
+        else:
+            self.image_filename = note[FIELD_IMAGEFILE] or ""
+            self.group_id = note[FIELD_GROUPID] or ""
+            self.masks = _decode_masks(note[FIELD_MASKSB64] or "")
+        
         self.title = note.get(FIELD_TITLE, "") if hasattr(note, "get") else note[FIELD_TITLE] or ""
         self.explanation = note.get(FIELD_EXPLANATION, "") if hasattr(note, "get") else note[FIELD_EXPLANATION] or ""
 
@@ -1778,6 +1864,13 @@ class MaskEditorDialog(QDialog):
             note[FIELD_TITLE] = self.title
             note[FIELD_MASKLABEL] = mask_label
             note[FIELD_EXPLANATION] = self.explanation
+            note[FIELD_INTERNAL] = _pack_internal(
+                image_filename=image_filename,
+                group_id=group_id,
+                active_index=i,
+                masks=masks,
+                mask_label=mask_label,
+            )
 
             mw.col.add_note(note, deck_id)
 
@@ -1819,6 +1912,13 @@ class MaskEditorDialog(QDialog):
             note[FIELD_TITLE] = self.title
             note[FIELD_MASKLABEL] = mask_label
             note[FIELD_EXPLANATION] = self.explanation
+            note[FIELD_INTERNAL] = _pack_internal(
+                image_filename=image_filename,
+                group_id=group_id,
+                active_index=i,
+                masks=masks,
+                mask_label=mask_label,
+            )
             note.flush()
 
         mw.col.save()
