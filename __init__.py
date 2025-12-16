@@ -39,6 +39,8 @@ from aqt.qt import (
     Qt,
     QTimer,
     QGuiApplication,
+    QColorDialog, 
+    QColor,
 )
 from aqt.utils import askUser, showInfo, showWarning, tooltip
 from aqt.webview import AnkiWebView, AnkiWebViewKind
@@ -268,14 +270,41 @@ class ConfigDialog(QDialog):
         f_m = QFormLayout(w_m)
         f_m.setVerticalSpacing(10)
 
-        self.fill_front = QLineEdit(str(_cfg_get(["03_masks", "default_fill_front"], "rgba(245,179,39,1)") or "rgba(245,179,39,1)"))
-        f_m.addRow("Front fill (active)", self.fill_front)
+        self.fill_front, btn_ff = self._color_row(
+            str(_cfg_get(["03_masks", "default_fill_front"], "rgba(245,179,39,1)"))
+        )
+        row = QHBoxLayout()
+        row.addWidget(self.fill_front, 1)
+        row.addWidget(btn_ff)
+        f_m.addRow("Front fill (active)", row)
 
-        self.fill_other = QLineEdit(str(_cfg_get(["03_masks", "default_fill_other"], "rgba(255,215,0,0.35)") or "rgba(255,215,0,0.35)"))
-        f_m.addRow("Fill (others)", self.fill_other)
+        self.fill_other, btn_fo = self._color_row(
+            str(
+                _cfg_get(
+                    ["03_masks", "default_fill_other"],
+                    "rgba(255,215,0,0.35)",
+                )
+                or "rgba(255,215,0,0.35)"
+            )
+        )
+        row_fo = QHBoxLayout()
+        row_fo.addWidget(self.fill_other, 1)
+        row_fo.addWidget(btn_fo)
+        f_m.addRow("Fill (others)", row_fo)
 
-        self.stroke = QLineEdit(str(_cfg_get(["03_masks", "default_stroke"], "rgba(0,0,0,0.65)") or "rgba(0,0,0,0.65)"))
-        f_m.addRow("Outline stroke", self.stroke)
+        self.stroke, btn_st = self._color_row(
+            str(
+                _cfg_get(
+                    ["03_masks", "default_stroke"],
+                    "rgba(0,0,0,0.65)",
+                )
+                or "rgba(0,0,0,0.65)"
+            )
+        )
+        row_st = QHBoxLayout()
+        row_st.addWidget(self.stroke, 1)
+        row_st.addWidget(btn_st)
+        f_m.addRow("Outline stroke", row_st)
 
         self.outline_px = QSpinBox()
         self.outline_px.setRange(1, 12)
@@ -486,6 +515,37 @@ class ConfigDialog(QDialog):
             pass
 
         self.accept()
+
+    def _color_row(self, value: str) -> tuple[QLineEdit, QPushButton]:
+        edit = QLineEdit(value)
+        edit.setPlaceholderText("rgba(r,g,b,a)")
+
+        btn = QPushButton("Pick…")
+
+        def pick():
+            # rgba(...) → QColor
+            col = QColor()
+            m = re.match(r"rgba?\(([^)]+)\)", edit.text().replace(" ", ""))
+            if m:
+                parts = m.group(1).split(",")
+                try:
+                    r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+                    a = float(parts[3]) if len(parts) == 4 else 1.0
+                    col = QColor(r, g, b, int(a * 255))
+                except Exception:
+                    pass
+
+            dlg = QColorDialog(col, self)
+            dlg.setOption(QColorDialog.ColorDialogOption.ShowAlphaChannel, True)
+
+            if dlg.exec():
+                c = dlg.currentColor()
+                rgba = f"rgba({c.red()},{c.green()},{c.blue()},{round(c.alpha()/255,3)})"
+                edit.setText(rgba)
+
+        btn.clicked.connect(pick)
+        return edit, btn
+
 
 
 def _open_settings_dialog() -> None:
