@@ -563,10 +563,9 @@ def ensure_note_type() -> None:
     """
 
     def _data_attrs(side: str) -> str:
+        # Phase 3: rendering reads InternalData only (no legacy data-active / data-masks-b64)
         return (
             f'data-side="{side}" '
-            f'data-active="{{{{{FIELD_ACTIVEIDX}}}}}" '
-            f'data-masks-b64="{{{{{FIELD_MASKSB64}}}}}" '
             f'data-fill-front="{_cfg_get(["03_masks","default_fill_front"], "rgba(245,179,39,1)")}" '
             f'data-fill-other="{_cfg_get(["03_masks","default_fill_other"], "rgba(255,215,0,0.35)")}" '
             f'data-stroke="{_cfg_get(["03_masks","default_stroke"], "rgba(0,0,0,0.65)")}" '
@@ -580,7 +579,7 @@ def ensure_note_type() -> None:
     <div class="aioe-title">{_fld(FIELD_TITLE)}</div>
     <div class="aioe-center">
       <div id="aioe-root" {_data_attrs("front")}>
-      <script class="aioe-internal" type="application/json">{{InternalData}}</script>
+      <script class="aioe-internal" type="application/json">{_fld(FIELD_INTERNAL)}</script>
         {_fld(FIELD_IMAGEHTML)}
       </div>
     </div>
@@ -591,7 +590,7 @@ def ensure_note_type() -> None:
     <div class="aioe-title">{_fld(FIELD_TITLE)}</div>
     <div class="aioe-center">
       <div id="aioe-root" {_data_attrs("back")}>
-      <script class="aioe-internal" type="application/json">{{InternalData}}</script>
+      <script class="aioe-internal" type="application/json">{_fld(FIELD_INTERNAL)}</script>
         {_fld(FIELD_IMAGEHTML)}
       </div>
     </div>
@@ -638,8 +637,6 @@ def ensure_note_type() -> None:
         FIELD_TITLE,
         FIELD_NO,
         FIELD_IMAGEFILE,
-        FIELD_MASKSB64,
-        FIELD_ACTIVEIDX,
         FIELD_GROUPID,
         FIELD_MASKLABEL,  
         FIELD_INTERNAL,  
@@ -1846,15 +1843,12 @@ class MaskEditorDialog(QDialog):
 
     def _create_notes_for_group(self, group_id: str, image_filename: str, masks: list[dict]) -> None:
         deck_id = mw.col.decks.current()["id"]
-        masks_b64 = _encode_masks(masks)
 
         for i, m in enumerate(masks):
             note = self._new_note()
 
             note[FIELD_IMAGEFILE] = image_filename
             note[FIELD_IMAGEHTML] = f'<img class="aioe-img" src="{image_filename}">'
-            note[FIELD_MASKSB64] = masks_b64
-            note[FIELD_ACTIVEIDX] = str(i)
             note[FIELD_GROUPID] = group_id
 
             mask_label = (m.get("label", "") if isinstance(m, dict) else "")
@@ -1881,13 +1875,15 @@ class MaskEditorDialog(QDialog):
 
     def _sync_group_notes(self, group_id: str, image_filename: str, masks: list[dict]) -> None:
         deck_id = mw.col.decks.current()["id"]
-        masks_b64 = _encode_masks(masks)
 
         nids = mw.col.find_notes(f'{FIELD_GROUPID}:"{group_id}"')
         by_idx: dict[int, int] = {}
         for nid in nids:
             note = mw.col.get_note(nid)
-            idx = _int_or0(note[FIELD_ACTIVEIDX])
+            no = _int_or0(note[FIELD_NO])
+            if no <= 0:
+                continue
+            idx = no - 1
             by_idx[idx] = nid
 
         created = 0
@@ -1896,14 +1892,12 @@ class MaskEditorDialog(QDialog):
                 note = mw.col.get_note(by_idx[i])
             else:
                 note = self._new_note()
-                note[FIELD_ACTIVEIDX] = str(i)
                 note[FIELD_GROUPID] = group_id
                 mw.col.add_note(note, deck_id)
                 created += 1
 
             note[FIELD_IMAGEFILE] = image_filename
             note[FIELD_IMAGEHTML] = f'<img class="aioe-img" src="{image_filename}">'
-            note[FIELD_MASKSB64] = masks_b64
 
             mask_label = (m.get("label", "") if isinstance(m, dict) else "")
             no = i + 1
