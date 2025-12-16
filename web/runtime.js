@@ -6,25 +6,25 @@
     catch (e) { try { return atob(b64 || ""); } catch (_) { return ""; } }
   }
 
-function aioeParseInternalFromDom(root) {
-  try {
-    const el = root.querySelector("script.aioe-internal");
-    if (!el) return null;
-    const txt = (el.textContent || "").trim();
-    if (!txt) return null;
+  function aioeParseInternalFromDom(root) {
+    try {
+      const el = root.querySelector("script.aioe-internal");
+      if (!el) return null;
+      const txt = (el.textContent || "").trim();
+      if (!txt) return null;
 
-    const obj = JSON.parse(txt);
-    if (!obj || typeof obj !== "object") return null;
-    if ((obj.v | 0) < 1) return null;
+      const obj = JSON.parse(txt);
+      if (!obj || typeof obj !== "object") return null;
+      if ((obj.v | 0) < 1) return null;
 
-    const masks = Array.isArray(obj.masks) ? obj.masks : null;
-    const active = Number.isFinite(Number(obj.active)) ? Number(obj.active) : 0;
-    if (!masks) return null;
-    return { masks, active };
-  } catch (e) {
-    return null;
+      const masks = Array.isArray(obj.masks) ? obj.masks : null;
+      const active = Number.isFinite(Number(obj.active)) ? Number(obj.active) : 0;
+      if (!masks) return null;
+      return { masks, active };
+    } catch (e) {
+      return null;
+    }
   }
-}
 
   function parseMasksB64(b64) {
     const txt = b64ToUtf8(b64);
